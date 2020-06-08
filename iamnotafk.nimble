@@ -7,8 +7,6 @@ license       = "MIT"
 srcDir        = "src"
 bin           = @["iamnotafk"]
 
-
-
 # Dependencies
 
-requires "nim >= 1.2.0"
+requires "nim >= 1.2.0", "x11"
