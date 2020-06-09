@@ -1,4 +1,9 @@
-import x11/x, x11/xlib, random, asyncdispatch
+import x11/x,
+  x11/xlib,
+  random,
+  asyncdispatch,
+  cstrutils,
+  pointerInc
 
 const
   stepScale = 0.2f
@@ -41,3 +46,38 @@ proc moveCursorOnce*(display: PDisplay, rootWindow: TWindow) {.async.} =
 
   nextCoordX.crop(0, width)
   nextCoordY.crop(0, height)
+
+proc searchWindow*(display: PDisplay, current: TWindow, targetTitle: string): TWindow =
+  var title: cstring
+
+  let status = XFetchName(display, current, addr title)
+  defer:
+    discard XFree(title)
+    
+  if status > 0 and title.startsWith(targetTitle):
+    return current
+
+  var 
+    root, parent: TWindow
+    children: TWindow
+    childrenPtr: PWindow = addr children
+    childrenCount: cuint = 0
+
+  let queryResult = XQueryTree(display, current, addr root, addr parent, addr childrenPtr, addr childrenCount)
+  defer:
+    discard XFree(childrenPtr)
+
+  if queryResult != 0:
+    if childrenCount == 0:
+      return None
+
+    for i in 0 .. childrenCount-1:
+      pointerInc:
+        let nextCurrent = childrenPtr + int(i)
+
+        let searchResult = searchWindow(display, nextCurrent[], targetTitle)
+
+        if searchResult != None:
+          return searchResult
+
+  return None
