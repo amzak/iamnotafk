@@ -13,11 +13,12 @@ var
   mouseCurrentX: int
   mouseCurrentY: int
 
-proc crop[T](value: var T, lower, upper: T) =
+proc crop[T](value: T, lower, upper: T): T =
   if value < lower:
-    value = lower
+    return lower
   elif value > upper:
-    value = upper
+    return upper
+  return value
 
 proc moveCursorOnce*(display: PDisplay, rootWindow: TWindow) {.async.} =
   let width = XDisplayWidth(display, 0)
@@ -45,8 +46,8 @@ proc moveCursorOnce*(display: PDisplay, rootWindow: TWindow) {.async.} =
     discard XFlush(display)
     await sleepAsync(5)
 
-  nextCoordX.crop(0, width)
-  nextCoordY.crop(0, height)
+  mouseCurrentX = nextCoordX.crop(0, width)
+  mouseCurrentY = nextCoordY.crop(0, height)
 
 proc searchWindow*(display: PDisplay, current: TWindow, targetTitle: string): TWindow =
   var title: cstring
