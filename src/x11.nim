@@ -3,7 +3,8 @@ import x11/x,
   random,
   asyncdispatch,
   cstrutils,
-  pointerInc
+  pointerInc,
+  x11screensaver
 
 const
   stepScale = 0.2f
@@ -81,3 +82,16 @@ proc searchWindow*(display: PDisplay, current: TWindow, targetTitle: string): TW
           return searchResult
 
   return None
+
+proc waitForUserIdle*(display: PDisplay, rootWindow: TWindow, userIdleTimeout: int, cancellation: Future[void]) {.async.} =
+  var info = XScreenSaverAllocInfo()
+  defer:
+    discard XFree(info)
+  info.idle = 0
+
+  while not cancellation.finished:
+    discard XScreenSaverQueryInfo(display, rootWindow, info)
+    if info.idle < culong(userIdleTimeout):
+      await sleepAsync(userIdleTimeout / 10) or cancellation
+    else:
+      break
