@@ -1,5 +1,6 @@
 import x11/x,
   x11/xlib,
+  x11/keysym,
   random,
   asyncdispatch,
   cstrutils,
@@ -20,7 +21,7 @@ proc crop[T](value: T, lower, upper: T): T =
     return upper
   return value
 
-proc moveCursorOnce*(display: PDisplay, rootWindow: TWindow) {.async.} =
+proc moveCursorOnce*(display: PDisplay, window: TWindow) {.async.} =
   let width = XDisplayWidth(display, 0)
   let height = XDisplayHeight(display, 0)
 
@@ -37,7 +38,7 @@ proc moveCursorOnce*(display: PDisplay, rootWindow: TWindow) {.async.} =
     discard XWarpPointer(
       display, 
       None, 
-      rootWindow, 
+      window, 
       0, 0, 
       cuint(width), 
       cuint(height), 
@@ -84,15 +85,55 @@ proc searchWindow*(display: PDisplay, current: TWindow, targetTitle: string): TW
 
   return None
 
-proc waitForUserIdle*(display: PDisplay, rootWindow: TWindow, userIdleTimeout: int, cancellation: Future[void]) {.async.} =
+proc waitForUserIdle*(display: PDisplay, rootWindow: TWindow, userIdleTimeout: int) {.async.} =
   var info = XScreenSaverAllocInfo()
   defer:
     discard XFree(info)
   info.idle = 0
 
-  while not cancellation.finished:
+  while true:
     discard XScreenSaverQueryInfo(display, rootWindow, info)
     if info.idle < culong(userIdleTimeout):
-      await sleepAsync(userIdleTimeout / 10) or cancellation
+      await sleepAsync(userIdleTimeout div 10)
     else:
       break
+
+proc createKeyEvent(display: PDisplay, window: TWindow, key: TKeySym, modifiers: cuint, eventType: cint): TXEvent =  
+  let event = TXKeyEvent(
+    display: display,
+    window: window,
+    root: None,
+    subwindow: None,
+    time: CurrentTime,
+    x: 0,
+    y: 0,
+    x_root: 0,
+    y_root: 0,
+    same_screen: 1,
+    keycode: cuint(XKeysymToKeycode(display, key)),
+    state: modifiers,
+    theType: eventType
+  )
+
+  return TXEvent(xkey: event)
+
+proc pressKeyAndFlush*(display: PDisplay, window: TWindow, key: TKeySym, modifiers: cuint = 0): TXEvent =
+  var keyEvent = createKeyEvent(display, window, key, 0, KeyPress)
+
+  discard XSendEvent(display, keyEvent.xkey.window, 1, KeyPressMask, addr keyEvent)
+  discard XFlush(display)
+
+  return keyEvent
+
+proc releaseKey*(event: sink TXEvent) =
+  event.xkey.theType = KeyRelease
+  discard XSendEvent(event.xkey.display, event.xkey.window, 1, KeyReleaseMask, addr event)
+
+proc pressAltTab*(display: PDisplay, window: TWindow) {.async.} =
+  var altEvent = pressKeyAndFlush(display, window, XK_Alt_L)
+  await sleepAsync(100)
+  var tabEvent = pressKeyAndFlush(display, window, XK_Tab)
+  await sleepAsync(100)
+  releaseKey(altEvent)
+  releaseKey(tabEvent)
+  discard XFlush(display)

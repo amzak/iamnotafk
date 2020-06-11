@@ -3,28 +3,44 @@ import
     asyncdispatch,
     x11/x,
     x11/xlib,
-    x11
+    x11,
+    random,
+    strutils
 
 from posix import SIGINT, SIGTERM, onSignal
 
-const
-  userIdleTimeoutNormal = 60000
-  userIdleTimeoutShort = 10000
-
 var
   cancellation: Future[void] = newFuture[void]("cancellationFuture")
-  userIdleTimeout = 60000
+  target: string = "code"
+  userIdleTimeoutNormal = 60000
+  userIdleTimeout: int
 
 onSignal(SIGINT, SIGTERM):
   echo "shutting down..."
   cancellation.complete()
 
+proc userIdleTimeoutShort(): int {.inline.} = userIdleTimeoutNormal div 10
+
+proc readParam(key, value: string) =
+    case key
+        of "-w":
+            target = value
+        of "-t":
+            userIdleTimeoutNormal = parseInt(value) * 1000
+
 proc main() {.async.} =
-  if paramCount() < 2 or paramStr(1) != "-t":
-    echo "usage: iamnotafk -t x11_window_title"
+  if paramCount() < 2:
+    echo "usage: iamnotafk -w x11_window_title [-t 60]"
     quit(1)
 
-  let target = paramStr(2)
+  for i in 0 .. paramCount() div 2 - 1:
+    readParam(paramStr(i*2 + 1), paramStr(i*2 + 2))
+
+  userIdleTimeout = userIdleTimeoutNormal
+
+  echo "target: ", target
+  echo "idle timeout: ", userIdleTimeout
+  echo "idle timeout short: ", userIdleTimeoutShort()
     
   var display = XOpenDisplay(nil)
   defer:
@@ -38,10 +54,10 @@ proc main() {.async.} =
     quit(1)
 
   discard XRaiseWindow(display, targetWindow)
-
+  
   while not cancellation.finished:
     echo "waiting for user to be idle..."
-    var fut = waitForUserIdle(display, rootWindow, userIdleTimeout, cancellation)
+    var fut = waitForUserIdle(display, rootWindow, userIdleTimeout) or cancellation
     var userAway = await withTimeout(fut, int(float(userIdleTimeout) * 1.1f))
 
     if cancellation.finished:
@@ -49,8 +65,12 @@ proc main() {.async.} =
 
     if userAway:
       echo "user is idle"
-      await moveCursorOnce(display, rootWindow)
-      userIdleTimeout = userIdleTimeoutShort
+      if rand(100) < 10:
+        echo "alt tab"
+        await pressAltTab(display, targetWindow)
+      else:
+        await moveCursorOnce(display, targetWindow)
+      userIdleTimeout = userIdleTimeoutShort()
     else:
       echo "user is not idle"
       userIdleTimeout = userIdleTimeoutNormal
