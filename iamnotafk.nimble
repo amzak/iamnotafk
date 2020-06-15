@@ -10,3 +10,6 @@ bin           = @["iamnotafk"]
 # Dependencies
 
 requires "nim >= 1.2.0", "x11"
+
+task release, "build in release":
+  exec "nimble build -y -d:release --opt:speed"
